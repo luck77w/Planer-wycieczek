@@ -1,7 +1,7 @@
 {
   "name": "Planer wycieczek",
   "short_name": "Planer",
-  "start_url": "planer4.html",
+  "start_url": "index.html",
   "display": "standalone",
   "background_color": "#f6f8fb",
   "theme_color": "#0b74de",
@@ -18,3 +18,4 @@
     }
   ]
 }
+
