@@ -1,6 +1,6 @@
 const CACHE_NAME = "planer-cache-v1";
 const ASSETS = [
-  "./planer4.html",
+  "./index.html",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png"
@@ -19,3 +19,4 @@ self.addEventListener("fetch", e => {
     caches.match(e.request).then(resp => resp || fetch(e.request))
   );
 });
+
