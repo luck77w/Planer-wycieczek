@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Planer jednodniowych wycieczek</title>
+ <link rel="manifest" href="manifest.json">
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(err=>console.error("SW fail", err));
+    }
+  </script>
+  <style>
+    :root{--accent:#0b74de;--muted:#666}
+    body{font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0;background:#f6f8fb;color:#14213d}
+    header{background:linear-gradient(90deg,var(--accent),#2a9df4);color:#fff;padding:18px 20px}
+    .wrap{display:grid;grid-template-columns:380px 1fr;gap:18px;padding:18px;max-width:1200px;margin:18px auto}
+    .card{background:#fff;border-radius:12px;box-shadow:0 6px 18px rgba(20,33,61,.06);padding:14px}
+    h1{margin:0;font-size:18px}
+    label{display:block;margin-top:10px;font-size:13px;color:var(--muted)}
+    input[type=text], input[type=date], input[type=number], textarea, select{width:100%;padding:8px;border-radius:8px;border:1px solid #e6eef8;margin-top:6px;font-size:14px}
+    .row{display:flex;gap:8px}
+    .btn{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-block}
+    .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(11,116,222,.12)}
+    .small{font-size:13px;padding:6px 8px}
+    .trip-list{max-height:70vh;overflow:auto;margin-top:10px}
+    .trip-item{padding:10px;border-radius:8px;border:1px solid #eef6ff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+    .meta{font-size:13px;color:var(--muted)}
+    .pill{background:#eef6ff;color:var(--accent);padding:4px 8px;border-radius:999px;font-weight:600}
+    main .card{min-height:200px}
+    .details h2{margin:0 0 6px 0}
+    .list{margin:8px 0;padding-left:16px}
+    .controls{display:flex;gap:8px;margin-top:10px}
+    footer{max-width:1200px;margin:0 auto;padding:0 18px 28px;color:var(--muted)}
+    @media(max-width:900px){.wrap{grid-template-columns:1fr;padding:12px}.trip-list{max-height:28vh}}
+    .help{font-size:13px;color:#666;margin-top:8px}
+    /* wyróżnienie dla głównej atrakcji */
+    .highlight{background:#fff7d6;border-left:6px solid #f5b400;padding:12px;border-radius:8px;margin:10px 0;font-size:16px;font-weight:bold}
+.meta.weather {
+  font-size: 14px;
+  color: #0b74de;
+  margin-top: 6px;
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Planer jednodniowych wycieczek — szybkie planowanie</h1>
+    <div style="margin-top:6px;opacity:.95">Twórz, zapisuj i eksportuj plany wycieczek. Dane przechowywane lokalnie w przeglądarce.</div>
+  </header>
+
+  <div class="wrap">
+    <aside class="card">
+      <strong id="formTitle">Nowa wycieczka</strong>
+      <form id="tripForm">
+        <input type="hidden" id="editId" />
+        <label for="title">Tytuł (np. "Kraków - spacer")</label>
+        <input id="title" type="text" placeholder="Nadawaj krótkie tytuły" required />
+
+        <label for="city">Miasto</label>
+        <input id="city" list="cities" type="text" placeholder="Wybierz miasto lub wpisz swoje" required />
+        <datalist id="cities">
+          <option>Warszawa</option>
+          <option>Wrocław</option>
+          <option>Gdańsk</option>
+          <option>Poznań</option>
+          <option>Toruń</option>
+          <option>Łódź</option>
+          <option>Lublin</option>
+          <option>Sopot</option>
+          <option>Kazimierz Dolny</option>
+          <option>Sandomierz</option>
+        </datalist>
+
+        <label for="date">Data</label>
+        <input id="date" type="date" />
+
+        <label>Charakter</label>
+        <div class="row">
+          <select id="duration">
+            <option value="1">Jednodniowa</option>
+            <option value="2">Weekend (2 dni)</option>
+            <option value="multi">Wielodniowa</option>
+          </select>
+          <input id="transport" type="text" placeholder="Transport (np. samochód, pociąg)" />
+        </div>
+
+        <label for="mainAttraction">🌟 Główna atrakcja</label>
+        <input id="mainAttraction" type="text" placeholder="np. Zamek Królewski" style="font-size:16px;font-weight:bold;background:#fff7d6" />
+
+        <label for="cost">Szacunkowy koszt (PLN)</label>
+        <input id="cost" type="number" min="0" placeholder="np. 120" />
+
+        <label for="notes">Notatki / plan</label>
+        <textarea id="notes" rows="4" placeholder="Punkty do zobaczenia, knajpki, uwagi..."></textarea>
+
+        <label for="itineraryInput">Dodaj punkt trasy (np. 10:00 - Rynek)</label>
+        <div class="row">
+          <input id="itineraryInput" type="text" placeholder="10:00 - Rynek" />
+          <button id="addIt" class="btn small" type="button">Dodaj</button>
+        </div>
+        <ul id="itinerary" class="list"></ul>
+
+        <label for="checkInput">Lista rzeczy (np. mapa, bilet)</label>
+        <div class="row">
+          <input id="checkInput" type="text" placeholder="Weź: mapa" />
+          <button id="addCheck" class="btn small" type="button">Dodaj</button>
+        </div>
+        <ul id="checks" class="list"></ul>
+
+        <div class="controls">
+          <button class="btn" type="submit" id="saveBtn">Zapisz wycieczkę</button>
+          <button id="clearForm" class="btn ghost" type="button">Wyczyść</button>
+        </div>
+      </form>
+
+      <hr style="margin:12px 0" />
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="exportAll" class="btn small">Eksportuj wszystkie (JSON)</button>
+        <button id="importBtn" class="btn ghost small">Importuj JSON</button>
+        <input id="importFile" type="file" accept="application/json" style="display:none" />
+        <button id="clearAll" class="btn ghost small" title="Usuń wszystkie zapisane wycieczki">Usuń wszystkie</button>
+        <button id="clearStorage" class="btn ghost small" title="Wyczyść pamięć lokalną (usuwa wszystkie wycieczki)">Wyczyść pamięć</button>
+      </div>
+      <div class="help">Jeśli aplikacja nie pokazuje wycieczek po wgraniu pliku, kliknij "Wyczyść pamięć" — to usunie ewentualne uszkodzone dane w localStorage.</div>
+    </aside>
+
+    <main>
+      <section class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>Twoje wycieczki</strong>
+          <div class="meta">Kliknij by zobaczyć szczegóły</div>
+        </div>
+
+        <div class="trip-list" id="tripList"></div>
+      </section>
+
+      <section class="card details" id="detailCard" style="margin-top:14px;display:none">
+        <button id="backToList" class="btn ghost small">Powrót do listy</button>
+        <div id="detailContent"></div>
+        <div style="margin-top:10px" class="controls">
+          <button id="printTrip" class="btn">Drukuj</button>
+          <button id="exportTrip" class="btn ghost">Eksportuj (JSON)</button>
+          <button id="editTrip" class="btn">Edytuj</button>
+          <button id="deleteTrip" class="btn ghost">Usuń</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    Podstawowa wersja — dane zapisują się lokalnie.
+  </footer>
+
+  <script>
+    const LS_KEY = 'tripPlanner_v1'
+    const form = document.getElementById('tripForm')
+    const tripList = document.getElementById('tripList')
+    const detailCard = document.getElementById('detailCard')
+    const detailContent = document.getElementById('detailContent')
+    const backToList = document.getElementById('backToList')
+    const formTitle = document.getElementById('formTitle')
+    const editIdInput = document.getElementById('editId')
+    const saveBtn = document.getElementById('saveBtn')
+
+    const itineraryInput = document.getElementById('itineraryInput')
+    const itineraryEl = document.getElementById('itinerary')
+    const addIt = document.getElementById('addIt')
+    const checksEl = document.getElementById('checks')
+    const checkInput = document.getElementById('checkInput')
+    const addCheck = document.getElementById('addCheck')
+
+    const importFile = document.getElementById('importFile')
+    const importBtn = document.getElementById('importBtn')
+    const clearStorageBtn = document.getElementById('clearStorage')
+    const exportTripBtn = document.getElementById('exportTrip')
+    const printBtnEl = document.getElementById('printTrip')
+
+    let currentItinerary = []
+    let currentChecks = []
+    let trips = load()
+
+    // simple HTML escape to avoid accidental injection in generated HTML
+    function escapeHtml(s){
+      if(s === null || s === undefined) return ''
+      return String(s).replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]) })
+    }
+
+    function downloadJSON(obj, filename){
+      const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json'})
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href=url; a.download = filename; a.click(); URL.revokeObjectURL(url)
+    }
+
+    // render list on load
+    renderList()
+
+    addIt.addEventListener('click', ()=>{
+      const v = itineraryInput.value.trim()
+      if(!v) return
+      currentItinerary.push(v)
+      itineraryInput.value = ''
+      renderItinerary()
+    })
+
+    addCheck.addEventListener('click', ()=>{
+      const v = checkInput.value.trim()
+      if(!v) return
+      currentChecks.push({text:v,done:false})
+      checkInput.value = ''
+      renderChecks()
+    })
+
+    function renderItinerary(){
+      itineraryEl.innerHTML = ''
+      currentItinerary.forEach((it,i)=>{
+        const li = document.createElement('li')
+        li.textContent = it + ' '
+        const rm = document.createElement('button')
+        rm.textContent = 'Usuń'
+        rm.className = 'btn ghost small'
+        rm.onclick = ()=>{ currentItinerary.splice(i,1); renderItinerary() }
+        li.appendChild(rm)
+        itineraryEl.appendChild(li)
+      })
+    }
+
+    function renderChecks(){
+      checksEl.innerHTML = ''
+      currentChecks.forEach((c,i)=>{
+        const li = document.createElement('li')
+        const cb = document.createElement('input')
+        cb.type='checkbox'
+        cb.checked = !!c.done
+        cb.onchange = ()=>{ c.done = cb.checked }
+        li.appendChild(cb)
+        const span = document.createElement('span')
+        span.textContent = ' ' + c.text + ' '
+        li.appendChild(span)
+        const rm = document.createElement('button')
+        rm.textContent = 'Usuń'
+        rm.className = 'btn ghost small'
+        rm.onclick = ()=>{ currentChecks.splice(i,1); renderChecks() }
+        li.appendChild(rm)
+        checksEl.appendChild(li)
+      })
+    }
+
+    document.getElementById('clearForm').addEventListener('click', e=>{ e.preventDefault(); resetForm() })
+
+    // submit form (create / update)
+    form.addEventListener('submit', e=>{
+      e.preventDefault()
+      const editingId = editIdInput.value
+      const existing = trips.find(t=>t.id===editingId)
+      const t = {
+        id: editingId || 'trip_' + Date.now(),
+        title: document.getElementById('title').value.trim(),
+        city: document.getElementById('city').value.trim(),
+        date: document.getElementById('date').value || null,
+        duration: document.getElementById('duration').value,
+        transport: document.getElementById('transport').value.trim(),
+        mainAttraction: document.getElementById('mainAttraction').value.trim() || '',
+        cost: Number(document.getElementById('cost').value) || 0,
+        notes: document.getElementById('notes').value.trim(),
+        itinerary: currentItinerary.slice(),
+        checks: currentChecks.map(c=>({text:c.text,done:!!c.done})),
+        done: existing ? !!existing.done : false
+      }
+
+      if(editingId){
+        trips = trips.map(tr=> tr.id===editingId ? t : tr)
+      }else{
+        trips.push(t)
+      }
+      save()
+      resetForm()
+      renderList()
+    })
+
+    function resetForm(){
+      form.reset()
+      currentItinerary = []
+      currentChecks = []
+      editIdInput.value = ''
+      formTitle.textContent = 'Nowa wycieczka'
+      saveBtn.textContent = 'Zapisz wycieczkę'
+      renderItinerary(); renderChecks()
+      window.scrollTo({top:0,behavior:'smooth'})
+    }
+
+    function populateFormForEdit(trip){
+      editIdInput.value = trip.id
+      document.getElementById('title').value = trip.title || ''
+      document.getElementById('city').value = trip.city || ''
+      document.getElementById('date').value = trip.date || ''
+      document.getElementById('duration').value = trip.duration || '1'
+      document.getElementById('transport').value = trip.transport || ''
+      document.getElementById('mainAttraction').value = trip.mainAttraction || ''
+      document.getElementById('cost').value = trip.cost || ''
+      document.getElementById('notes').value = trip.notes || ''
+      currentItinerary = Array.isArray(trip.itinerary) ? trip.itinerary.slice() : []
+      currentChecks = Array.isArray(trip.checks) ? trip.checks.map(c=>({text:c.text,done:!!c.done})) : []
+      formTitle.textContent = 'Edytuj wycieczkę'
+      saveBtn.textContent = 'Zapisz zmiany'
+      renderItinerary(); renderChecks()
+      window.scrollTo({top:0,behavior:'smooth'})
+    }
+
+    function save(){
+      try{
+        localStorage.setItem(LS_KEY, JSON.stringify(trips))
+      }catch(e){
+        console.error('Błąd zapisu do localStorage', e)
+      }
+    }
+
+    function load(){
+      try{
+        return JSON.parse(localStorage.getItem(LS_KEY)) || []
+      }catch(e){
+        console.warn('Nie można wczytać danych z localStorage — mogą być uszkodzone.')
+        return []
+      }
+    }
+
+    function renderList(){
+      tripList.innerHTML = ''
+      if(trips.length===0){ tripList.innerHTML = '<div class="meta">Brak zapisanych wycieczek. Dodaj pierwszą po lewej.</div>'; return }
+      trips.slice().reverse().forEach(trip=>{
+        const el = document.createElement('div'); el.className='trip-item'
+        const left = document.createElement('div')
+        left.innerHTML = '<strong>' + escapeHtml(trip.title) + '</strong><div class="meta">' + escapeHtml(trip.city) + (trip.date?(' • '+escapeHtml(trip.date)):'') + (trip.mainAttraction?('<div style="margin-top:6px;color:#8a6d00;font-weight:600;font-size:13px">🌟 '+escapeHtml(trip.mainAttraction)+'</div>'):'') + '</div>'
+        const right = document.createElement('div')
+
+        const view = document.createElement('button'); view.className='btn small'; view.textContent='Szczegóły'
+        view.addEventListener('click', ()=> showDetail(trip.id))
+
+        const done = document.createElement('button'); done.className='btn ghost small'; done.textContent = trip.done? 'Oznacz jako niezrobione':'Oznacz jako zrobione'
+        done.addEventListener('click', ()=>{ trip.done = !trip.done; save(); renderList() })
+
+        const del = document.createElement('button'); del.className='btn ghost small'; del.textContent='Usuń'
+        del.addEventListener('click', ()=>{
+          if(confirm('Usunąć wycieczkę "' + trip.title + '"?')){
+            trips = trips.filter(t=>t.id!==trip.id)
+            save()
+            if(editIdInput.value === trip.id) detailCard.style.display = 'none'
+            renderList()
+          }
+        })
+
+        right.appendChild(view); right.appendChild(done); right.appendChild(del)
+        el.appendChild(left); el.appendChild(right)
+        if(trip.done){ const p = document.createElement('div'); p.className='pill'; p.textContent='Zrealizowane'; el.insertBefore(p,el.firstChild) }
+        tripList.appendChild(el)
+      })
+    }
+
+    // helper to build google maps route from itinerary (best-effort)
+    function extractPlace(input){
+      if(!input) return ''
+      let s = String(input).trim()
+      s = s.replace(/^\s*\d{1,2}:\d{2}\s*[-–—]?\s*/, '')
+      const parts = s.split(/[-–—]/).map(p=>p.trim()).filter(Boolean)
+      if(parts.length>1) s = parts[parts.length-1]
+      return s.trim()
+    }
+
+    function buildMapsRouteLink(trip){
+      const places = (trip.itinerary||[]).map(extractPlace).filter(Boolean)
+      if(places.length === 0 && trip.city) places.push(trip.city)
+      if(places.length === 0) return null
+      const encoded = places.map(p => encodeURIComponent(p)).join('/')
+      return 'https://www.google.com/maps/dir/' + encoded
+    }
+
+    // defensive replace handler (avoid double bindings)
+    function replaceHandler(oldBtn, handler){
+      if(!oldBtn) return
+      const newBtn = oldBtn.cloneNode(true)
+      oldBtn.parentNode.replaceChild(newBtn, oldBtn)
+      newBtn.addEventListener('click', handler)
+    }
+
+    // detailed view
+// --- Prognoza pogody dla wybranej daty (Open-Meteo) ---
+async function fetchWeather(city, date) {
+  try {
+    if (!city) return null;
+    // pobierz współrzędne miasta
+    const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=pl&format=json`);
+    const geoData = await geo.json();
+    if (!geoData.results || geoData.results.length === 0) return null;
+    const { latitude, longitude } = geoData.results[0];
+
+    // pobierz prognozę dzienną
+    const weather = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto`
+    );
+    const data = await weather.json();
+    if (!data.daily) return null;
+
+    // znajdź dane dla daty wycieczki
+    const idx = data.daily.time.indexOf(date);
+    if (idx === -1) return null;
+
+    return {
+      max: Math.round(data.daily.temperature_2m_max[idx]),
+      min: Math.round(data.daily.temperature_2m_min[idx]),
+      rain: Math.round(data.daily.precipitation_sum[idx]),
+      code: data.daily.weathercode[idx]
+    };
+  } catch (err) {
+    console.error('Błąd pobierania pogody:', err);
+    return null;
+  }
+}
+    function showDetail(id){
+      try{
+        const trip = trips.find(t=>t.id===id)
+        if(!trip){ alert('Nie znaleziono wycieczki'); return }
+
+        detailContent.innerHTML = ''
+        detailCard.style.display = 'block'
+
+        // header
+        const h = document.createElement('div')
+        const titleEl = document.createElement('h2'); titleEl.textContent = trip.title || ''
+        const metaEl = document.createElement('div'); metaEl.className = 'meta'; metaEl.textContent = (trip.city || '') + (trip.date?(' • '+trip.date):'') + ' • ' + (trip.transport || '—')
+        h.appendChild(titleEl); h.appendChild(metaEl)
+// sekcja z pogodą
+const weatherBox = document.createElement('div');
+weatherBox.className = 'meta';
+weatherBox.textContent = '⏳ Ładowanie pogody...';
+h.appendChild(weatherBox);
+
+fetchWeather(trip.city, trip.date).then(w => {
+  if (!w) {
+    weatherBox.textContent = 'Brak prognozy dla wybranego dnia';
+    return;
+  }
+  const icons = {
+    0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️',
+    45: '🌫️', 48: '🌫️', 51: '🌦️', 61: '🌧️',
+    71: '❄️', 95: '⛈️'
+  };
+  const icon = icons[w.code] || '🌡️';
+  weatherBox.textContent = `${icon} ${w.min}–${w.max}°C, opady ${w.rain} mm`;
+});
+        // main attraction (under title)
+        if(trip.mainAttraction){
+          const highlight = document.createElement('div')
+          highlight.className = 'highlight'
+          highlight.textContent = '🌟 Główna atrakcja: ' + trip.mainAttraction
+          h.appendChild(highlight)
+        }
+
+        // notes
+        const notesEl = document.createElement('p'); notesEl.style.marginTop = '8px'; notesEl.textContent = trip.notes || ''
+        h.appendChild(notesEl)
+
+        // itinerary
+        const it = document.createElement('div')
+        const itTitle = document.createElement('h3'); itTitle.textContent = 'Trasa'; it.appendChild(itTitle)
+        const ul = document.createElement('ul')
+        ;(trip.itinerary||[]).forEach(i=>{ const li = document.createElement('li'); li.textContent = i; ul.appendChild(li) })
+        it.appendChild(ul)
+
+        // checks
+        const ch = document.createElement('div')
+        const chTitle = document.createElement('h3'); chTitle.textContent = 'Rzeczy do zabrania'; ch.appendChild(chTitle)
+        const ulc = document.createElement('ul')
+        ;(trip.checks||[]).forEach((c,idx)=>{
+          const li = document.createElement('li')
+          const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = !!c.done
+          cb.addEventListener('change', ()=>{ trip.checks[idx].done = cb.checked; save(); })
+          li.appendChild(cb)
+          li.appendChild(document.createTextNode(' ' + c.text))
+          ulc.appendChild(li)
+        })
+        ch.appendChild(ulc)
+
+        const misc = document.createElement('div')
+        misc.innerHTML = '<p><strong>Szacunkowy koszt:</strong> ' + (trip.cost || '—') + ' PLN</p>'
+
+        // links
+        const routeUrl = buildMapsRouteLink(trip)
+        let mapLink
+        if(routeUrl){
+          mapLink = document.createElement('a')
+          mapLink.href = routeUrl
+          mapLink.target = '_blank'
+          mapLink.rel = 'noopener noreferrer'
+          mapLink.textContent = 'Otwórz trasę w Google Maps'
+          mapLink.className = 'btn small'
+          mapLink.style.marginRight = '8px'
+        } else {
+          mapLink = document.createElement('a')
+          mapLink.href = 'https://www.google.com/maps/search/' + encodeURIComponent(trip.city || '')
+          mapLink.target = '_blank'
+          mapLink.rel = 'noopener noreferrer'
+          mapLink.textContent = 'Otwórz w Google Maps'
+          mapLink.className = 'btn small'
+          mapLink.style.marginRight = '8px'
+        }
+
+        const trainLink = document.createElement('a')
+        trainLink.href = `https://mt.rozklad-pkp.pl/?from=Lubliniec&to=${encodeURIComponent(trip.city || '')}${trip.date ? '&date=' + trip.date : ''}`
+        trainLink.target = '_blank'
+        trainLink.textContent = 'Sprawdź połączenie PKP'
+        trainLink.className = 'btn small'
+        trainLink.style.marginLeft = '8px'
+
+        detailContent.appendChild(h)
+        detailContent.appendChild(it)
+        detailContent.appendChild(ch)
+        detailContent.appendChild(misc)
+        detailContent.appendChild(mapLink)
+        detailContent.appendChild(trainLink)
+
+        // replace handlers for action buttons
+        const printBtn = document.getElementById('printTrip')
+        const exportBtn = document.getElementById('exportTrip')
+        const editBtn = document.getElementById('editTrip')
+        const deleteBtn = document.getElementById('deleteTrip')
+
+        replaceHandler(printBtn, ()=>{
+          const w = window.open('','_blank')
+          let html = '<html><head><title>' + escapeHtml(trip.title) + '</title><meta charset="utf-8"></head><body style="font-family:Arial,Helvetica,sans-serif;padding:18px">'
+          html += '<h1>' + escapeHtml(trip.title) + '</h1>'
+          html += '<p>' + escapeHtml(trip.city) + (trip.date?(' • '+escapeHtml(trip.date)):'') + '</p>'
+          if(trip.mainAttraction){
+            html += '<div style="background:#fff7d6;border-left:6px solid #f5b400;padding:12px;margin:10px 0;font-size:16px;font-weight:bold">'
+            html += '🌟 Główna atrakcja: ' + escapeHtml(trip.mainAttraction) + '</div>'
+          }
+          if(trip.notes) html += '<h3>Notatki</h3><p>' + escapeHtml(trip.notes) + '</p>'
+          if(trip.itinerary && trip.itinerary.length){
+            html += '<h3>Trasa</h3><ul>' + trip.itinerary.map(i=>' <li>' + escapeHtml(i) + '</li>').join('') + '</ul>'
+          }
+          if(trip.checks && trip.checks.length){
+            html += '<h3>Rzeczy do zabrania</h3><ul>' + trip.checks.map(c=>'<li>' + (c.done? '✓ ' : '') + escapeHtml(c.text) + '</li>').join('') + '</ul>'
+          }
+          html += '<p><strong>Koszt:</strong> ' + (trip.cost || '—') + ' PLN</p>'
+          html += '</body></html>'
+          w.document.write(html)
+          w.document.close()
+          w.print()
+        })
+
+        replaceHandler(exportBtn, ()=> downloadJSON(trip, (trip.title||'wycieczka').split(' ').join('_') + '.json'))
+
+        replaceHandler(editBtn, ()=>{ populateFormForEdit(trip); detailCard.style.display = 'none' })
+
+        replaceHandler(deleteBtn, ()=>{
+          if(confirm('Usunąć wycieczkę "' + trip.title + '"?')){
+            trips = trips.filter(t=>t.id!==trip.id)
+            save(); detailCard.style.display = 'none'; renderList()
+          }
+        })
+
+        detailCard.scrollIntoView({behavior:'smooth'})
+      }catch(err){
+        console.error('showDetail error', err)
+        alert('Błąd przy wyświetlaniu szczegółów: ' + (err && err.message))
+      }
+    }
+
+    backToList.onclick = ()=>{ detailCard.style.display='none' }
+
+    document.getElementById('exportAll').addEventListener('click', ()=> downloadJSON(trips, 'wycieczki_all_' + Date.now() + '.json'))
+
+    // export currently viewed trip (fallback)
+    exportTripBtn.addEventListener('click', ()=>{
+      const id = editIdInput.value
+      if(!id){ alert('Najpierw wybierz wycieczkę (Szczegóły -> Eksportuj).'); return }
+      const trip = trips.find(t=>t.id===id)
+      if(trip) downloadJSON(trip, (trip.title||'wycieczka').split(' ').join('_') + '.json')
+    })
+
+    document.getElementById('importBtn').addEventListener('click', ()=> importFile.click())
+
+    importFile.addEventListener('change', (e)=>{
+      const f = e.target.files[0]
+      if(!f) return
+      const reader = new FileReader()
+      reader.onload = ()=>{
+        try{
+          const data = JSON.parse(reader.result)
+          let toAdd = []
+          if(Array.isArray(data)) toAdd = data
+          else if(data && typeof data === 'object') toAdd = [data]
+          else throw new Error('Nieprawidłowy format JSON')
+
+          // normalize and merge
+          toAdd.forEach(item=>{
+            // ensure fields exist and are safe
+            item.id = item.id || ('trip_import_' + Date.now() + '_' + Math.floor(Math.random()*10000))
+            if(trips.find(t=>t.id===item.id)){
+              // avoid id collision: rename imported item
+              item.id = item.id + '_dup_' + Date.now()
+            }
+            item.title = item.title || ('Wycieczka ' + (new Date()).toISOString())
+            item.city = item.city || ''
+            item.date = item.date || null
+            item.duration = item.duration || '1'
+            item.transport = item.transport || ''
+            item.mainAttraction = item.mainAttraction || ''
+            item.cost = Number(item.cost) || 0
+            item.notes = item.notes || ''
+            item.itinerary = Array.isArray(item.itinerary) ? item.itinerary.slice() : []
+            item.checks = Array.isArray(item.checks) ? item.checks.map(c=>({text:c.text||'',done:!!c.done})) : []
+            item.done = !!item.done
+            trips.push(item)
+          })
+
+          save(); renderList(); alert('Import zakończony')
+        }catch(err){
+          console.error('Import error', err)
+          alert('Błąd importu: nieprawidłowy plik JSON')
+        }
+      }
+      reader.readAsText(f)
+      // reset input so same file can be chosen again
+      importFile.value = ''
+    })
+
+    document.getElementById('clearAll').addEventListener('click', ()=>{
+      if(confirm('Usunąć wszystkie zapisane wycieczki?')){ trips = []; save(); renderList(); detailCard.style.display='none' }
+    })
+
+    clearStorageBtn.addEventListener('click', ()=>{
+      if(confirm('Wyczyścić pamięć lokalną (usunięcie wszystkich wycieczek)?')){
+        localStorage.removeItem(LS_KEY)
+        trips = []
+        renderList()
+        alert('Pamięć wyczyszczona. Strona odświeży się.')
+        location.reload()
+      }
+    })
+
+    // sample if empty
+    function loadSampleIfEmpty(){
+      if(trips.length===0){
+        trips.push({id:'sample_1',title:'Wrocław - klasyczny spacer',city:'Wrocław',date:'',duration:'1',transport:'pociąg',mainAttraction:'Rynek i Ostrów Tumski',cost:60,notes:'Rynek, Ostrów Tumski, Hala Stulecia',itinerary:['10:00 Rynek','12:00 Ostrów Tumski','15:00 Hala Stulecia'],checks:[{text:'bilet PKP',done:false},{text:'woda',done:false}],done:false})
+        save(); renderList()
+      }
+    }
+    loadSampleIfEmpty()
+  </script>
+</body>
+</html>
