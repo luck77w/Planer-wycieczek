@@ -42,6 +42,20 @@
   margin-top: 6px;
 }
   </style>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+<style>
+  #map {
+    height: 300px;
+    border-radius: 12px;
+    margin: 10px 0;
+  }
+</style>
 </head>
 <body>
   <header>
@@ -74,6 +88,16 @@
 
         <label for="date">Data</label>
         <input id="date" type="date" />
+<label for="departureTime">Czas wyjazdu</label>
+<input id="departureTime" type="time" />
+
+<label for="returnTime">Czas powrotu</label>
+<input id="returnTime" type="time" />
+<label for="departurePlatform">Peron / tor (wyjazd)</label>
+<input id="departurePlatform" type="text" placeholder="np. peron 2, tor 4" />
+
+<label for="returnPlatform">Peron / tor (powrót)</label>
+<input id="returnPlatform" type="text" placeholder="np. peron 3, tor 1" />
 
         <label>Charakter</label>
         <div class="row">
@@ -193,23 +217,36 @@
     }
 
     // render list on load
-    renderList()
+renderList()
 
-    addIt.addEventListener('click', ()=>{
-      const v = itineraryInput.value.trim()
-      if(!v) return
-      currentItinerary.push(v)
-      itineraryInput.value = ''
-      renderItinerary()
-    })
+// dodawanie punktu trasy
+addIt.addEventListener('click', ()=>{
+  const v = itineraryInput.value.trim()
+  if(!v) return
+  currentItinerary.push(v)
 
-    addCheck.addEventListener('click', ()=>{
-      const v = checkInput.value.trim()
-      if(!v) return
-      currentChecks.push({text:v,done:false})
-      checkInput.value = ''
-      renderChecks()
-    })
+  // sortowanie chronologiczne, jeśli punkty zaczynają się od godziny
+  currentItinerary.sort((a, b) => {
+    const matchA = a.match(/^(\d{1,2}):(\d{2})/)
+    const matchB = b.match(/^(\d{1,2}):(\d{2})/)
+    if(!matchA || !matchB) return 0
+    const timeA = parseInt(matchA[1]) * 60 + parseInt(matchA[2])
+    const timeB = parseInt(matchB[1]) * 60 + parseInt(matchB[2])
+    return timeA - timeB
+  })
+
+  itineraryInput.value = ''
+  renderItinerary()
+})
+
+// dodawanie rzeczy do listy
+addCheck.addEventListener('click', ()=>{
+  const v = checkInput.value.trim()
+  if(!v) return
+  currentChecks.push({text:v,done:false})
+  checkInput.value = ''
+  renderChecks()
+})
 
     function renderItinerary(){
       itineraryEl.innerHTML = ''
@@ -254,6 +291,10 @@
       const editingId = editIdInput.value
       const existing = trips.find(t=>t.id===editingId)
       const t = {
+	departurePlatform: document.getElementById('departurePlatform').value.trim() || '',
+	returnPlatform: document.getElementById('returnPlatform').value.trim() || '',
+	departureTime: document.getElementById('departureTime').value || null,
+	returnTime: document.getElementById('returnTime').value || null,
         id: editingId || 'trip_' + Date.now(),
         title: document.getElementById('title').value.trim(),
         city: document.getElementById('city').value.trim(),
@@ -279,6 +320,10 @@
     })
 
     function resetForm(){
+	document.getElementById('departurePlatform').value = ''
+	document.getElementById('returnPlatform').value = ''
+	document.getElementById('departureTime').value = ''
+	document.getElementById('returnTime').value = ''
       form.reset()
       currentItinerary = []
       currentChecks = []
@@ -291,6 +336,10 @@
 
     function populateFormForEdit(trip){
       editIdInput.value = trip.id
+	document.getElementById('departurePlatform').value = trip.departurePlatform || ''
+	document.getElementById('returnPlatform').value = trip.returnPlatform || ''
+	document.getElementById('departureTime').value = trip.departureTime || ''
+	document.getElementById('returnTime').value = trip.returnTime || ''
       document.getElementById('title').value = trip.title || ''
       document.getElementById('city').value = trip.city || ''
       document.getElementById('date').value = trip.date || ''
@@ -426,7 +475,32 @@ async function fetchWeather(city, date) {
         // header
         const h = document.createElement('div')
         const titleEl = document.createElement('h2'); titleEl.textContent = trip.title || ''
-        const metaEl = document.createElement('div'); metaEl.className = 'meta'; metaEl.textContent = (trip.city || '') + (trip.date?(' • '+trip.date):'') + ' • ' + (trip.transport || '—')
+        const metaEl = document.createElement('div')
+metaEl.className = 'meta'
+metaEl.textContent = (trip.city || '') + (trip.date ? (' • ' + trip.date) : '') + ' • ' + (trip.transport || '—')
+h.appendChild(titleEl)
+h.appendChild(metaEl)
+
+if (trip.departureTime || trip.returnTime) {
+  const times = document.createElement('div')
+  times.className = 'meta'
+  times.textContent =
+    (trip.departureTime ? 'Wyjazd: ' + trip.departureTime : '') +
+    (trip.departureTime && trip.returnTime ? ' • ' : '') +
+    (trip.returnTime ? 'Powrót: ' + trip.returnTime : '')
+  h.appendChild(times)
+}
+if (trip.departurePlatform || trip.returnPlatform) {
+  const platforms = document.createElement('div')
+  platforms.className = 'meta'
+  platforms.textContent =
+    (trip.departurePlatform ? '🚉 ' + trip.departurePlatform : '') +
+    (trip.departurePlatform && trip.returnPlatform ? ' • ' : '') +
+    (trip.returnPlatform ? '⬅️ ' + trip.returnPlatform : '')
+  h.appendChild(platforms)
+}
+
+ (trip.city || '') + (trip.date?(' • '+trip.date):'') + ' • ' + (trip.transport || '—')
         h.appendChild(titleEl); h.appendChild(metaEl)
 // sekcja z pogodą
 const weatherBox = document.createElement('div');
@@ -505,7 +579,8 @@ fetchWeather(trip.city, trip.date).then(w => {
         }
 
         const trainLink = document.createElement('a')
-        trainLink.href = `https://mt.rozklad-pkp.pl/?from=Lubliniec&to=${encodeURIComponent(trip.city || '')}${trip.date ? '&date=' + trip.date : ''}`
+       const dateFormatted = trip.date ? trip.date.split('-').reverse().join('.') : '';
+trainLink.href = `https://mt.rozklad-pkp.pl/?from=Lubliniec&to=${encodeURIComponent(trip.city || '')}${dateFormatted ? '&date=' + dateFormatted : ''}`;
         trainLink.target = '_blank'
         trainLink.textContent = 'Sprawdź połączenie PKP'
         trainLink.className = 'btn small'
@@ -524,28 +599,125 @@ fetchWeather(trip.city, trip.date).then(w => {
         const editBtn = document.getElementById('editTrip')
         const deleteBtn = document.getElementById('deleteTrip')
 
-        replaceHandler(printBtn, ()=>{
-          const w = window.open('','_blank')
-          let html = '<html><head><title>' + escapeHtml(trip.title) + '</title><meta charset="utf-8"></head><body style="font-family:Arial,Helvetica,sans-serif;padding:18px">'
-          html += '<h1>' + escapeHtml(trip.title) + '</h1>'
-          html += '<p>' + escapeHtml(trip.city) + (trip.date?(' • '+escapeHtml(trip.date)):'') + '</p>'
-          if(trip.mainAttraction){
-            html += '<div style="background:#fff7d6;border-left:6px solid #f5b400;padding:12px;margin:10px 0;font-size:16px;font-weight:bold">'
-            html += '🌟 Główna atrakcja: ' + escapeHtml(trip.mainAttraction) + '</div>'
-          }
-          if(trip.notes) html += '<h3>Notatki</h3><p>' + escapeHtml(trip.notes) + '</p>'
-          if(trip.itinerary && trip.itinerary.length){
-            html += '<h3>Trasa</h3><ul>' + trip.itinerary.map(i=>' <li>' + escapeHtml(i) + '</li>').join('') + '</ul>'
-          }
-          if(trip.checks && trip.checks.length){
-            html += '<h3>Rzeczy do zabrania</h3><ul>' + trip.checks.map(c=>'<li>' + (c.done? '✓ ' : '') + escapeHtml(c.text) + '</li>').join('') + '</ul>'
-          }
-          html += '<p><strong>Koszt:</strong> ' + (trip.cost || '—') + ' PLN</p>'
-          html += '</body></html>'
-          w.document.write(html)
-          w.document.close()
-          w.print()
-        })
+   replaceHandler(printBtn, ()=>{
+  const w = window.open('', '_blank')
+  if (!w) {
+    alert('Proszę pozwolić na otwieranie wyskakujących okienek dla tej strony (pop-up).')
+    return
+  }
+
+  let html = '<html><head><title>' + escapeHtml(trip.title) + '</title><meta charset="utf-8">'
+  html += '<style>body{font-family:Arial,Helvetica,sans-serif;padding:18px}h1{margin-bottom:6px}.meta{color:#555;margin:4px 0}.highlight{background:#fff7d6;border-left:6px solid #f5b400;padding:8px;margin:8px 0;font-weight:bold} img{max-width:100%;border-radius:8px}</style>'
+  html += '</head><body>'
+  html += '<h1>' + escapeHtml(trip.title) + '</h1>'
+  html += '<p>' + escapeHtml(trip.city) + (trip.date ? (' • ' + escapeHtml(trip.date)) : '') + '</p>'
+
+  // czasy i perony
+  if (trip.departureTime || trip.returnTime) {
+    html += '<div class="meta">'
+    html += (trip.departureTime ? 'Wyjazd: ' + escapeHtml(trip.departureTime) : '')
+    if (trip.departureTime && trip.returnTime) html += ' • '
+    html += (trip.returnTime ? 'Powrót: ' + escapeHtml(trip.returnTime) : '')
+    html += '</div>'
+  }
+
+  if (trip.departurePlatform || trip.returnPlatform) {
+    html += '<div class="meta">'
+    html += (trip.departurePlatform ? '🚉 ' + escapeHtml(trip.departurePlatform) : '')
+    if (trip.departurePlatform && trip.returnPlatform) html += ' • '
+    html += (trip.returnPlatform ? '⬅️ ' + escapeHtml(trip.returnPlatform) : '')
+    html += '</div>'
+  }
+
+  // pogoda
+  if (trip.city && trip.date) {
+    html += '<div class="meta" id="weatherBox">⏳ Ładowanie pogody...</div>'
+  }
+
+  if (trip.mainAttraction) {
+    html += '<div class="highlight">🌟 Główna atrakcja: ' + escapeHtml(trip.mainAttraction) + '</div>'
+  }
+
+  if (trip.notes) html += '<h3>Notatki</h3><p>' + escapeHtml(trip.notes) + '</p>'
+  if (trip.itinerary && trip.itinerary.length)
+    html += '<h3>Trasa</h3><ul>' + trip.itinerary.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>'
+  if (trip.checks && trip.checks.length)
+    html += '<h3>Rzeczy do zabrania</h3><ul>' + trip.checks.map(c => '<li>' + (c.done ? '✓ ' : '') + escapeHtml(c.text) + '</li>').join('') + '</ul>'
+
+  html += '<p><strong>Koszt:</strong> ' + (trip.cost || '—') + ' PLN</p>'
+  html += '<div id="mapBox" style="margin-top:10px;text-align:center">⏳ Ładowanie mapy...</div>'
+  html += '</body></html>'
+
+  w.document.write(html)
+  w.document.close()
+
+  // Po załadowaniu dokumentu w nowym oknie: pobierz prognozę i statyczną mapę.
+  w.onload = async () => {
+    // 1) Pogoda
+    if (trip.city && trip.date) {
+      try {
+        const weather = await fetchWeather(trip.city, trip.date)
+        const box = w.document.getElementById('weatherBox')
+        if (weather && box) {
+          const icons = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',61:'🌧️',71:'❄️',95:'⛈️'}
+          const icon = icons[weather.code] || '🌡️'
+          box.textContent = `${icon} ${weather.min}–${weather.max}°C, opady ${weather.rain} mm`
+        } else if (box) {
+          box.textContent = 'Brak prognozy'
+        }
+      } catch (e) {
+        const box = w.document.getElementById('weatherBox')
+        if (box) box.textContent = 'Błąd pobierania pogody'
+      }
+    }
+
+    // 2) Statyczna mapa — użyjemy bezpośrednio gotowego URL i poczekamy na load obrazu
+    const mapBox = w.document.getElementById('mapBox')
+    try {
+      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trip.city)}&count=1&language=pl&format=json`)
+      const geoData = await geo.json()
+      if (!geoData.results || geoData.results.length === 0) {
+        mapBox.textContent = 'Nie udało się pobrać współrzędnych miasta.'
+        // jeśli nie ma współrzędnych — nadal dajemy możliwość wydruku (bez mapy)
+        w.print()
+        return
+      }
+
+      const { latitude, longitude } = geoData.results[0]
+      const staticMapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${latitude},${longitude}&zoom=12&size=600x300&markers=${latitude},${longitude},red-pushpin`
+
+      // stwórz element <img> i poczekaj aż się załaduje
+      const img = w.document.createElement('img')
+      img.alt = 'Mapa ' + escapeHtml(trip.city)
+      img.style.borderRadius = '8px'
+      img.style.maxWidth = '100%'
+
+      // handlers
+      img.onload = () => {
+        // wstaw obraz i dopiero wtedy drukuj
+        mapBox.innerHTML = ''
+        mapBox.appendChild(img)
+        try { w.focus() } catch(e){}
+        // mały timeout (100ms) da przeglądarce czas na wyrenderowanie obrazka
+        setTimeout(()=>{ try{ w.print() }catch(e){ console.error('print failed', e)} }, 100)
+      }
+      img.onerror = () => {
+        mapBox.textContent = 'Błąd przy wczytywaniu obrazu mapy.'
+        // mimo błędu — pozwalamy na druk (bez mapy)
+        setTimeout(()=>{ try{ w.print() }catch(e){ console.error('print failed', e)} }, 100)
+      }
+
+      // rozpocznij pobieranie (ustaw src ostatnie)
+      img.src = staticMapUrl
+
+    } catch (err) {
+      console.error('Static map error', err)
+      mapBox.textContent = 'Błąd podczas pobierania mapy.'
+      // nawet przy błędzie — wywołaj druk po krótkim czasie
+      setTimeout(()=>{ try{ w.print() }catch(e){ console.error('print failed', e)} }, 200)
+    }
+  }
+})
 
         replaceHandler(exportBtn, ()=> downloadJSON(trip, (trip.title||'wycieczka').split(' ').join('_') + '.json'))
 
@@ -557,7 +729,50 @@ fetchWeather(trip.city, trip.date).then(w => {
             save(); detailCard.style.display = 'none'; renderList()
           }
         })
+// mapa offline (Leaflet)
+const mapDiv = document.createElement('div');
+mapDiv.id = 'map';
+detailContent.appendChild(mapDiv);
 
+(async () => {
+  try {
+    const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trip.city)}&count=1&language=pl&format=json`);
+    const geoData = await geo.json();
+    if (!geoData.results || geoData.results.length === 0) {
+      mapDiv.textContent = 'Nie udało się załadować mapy';
+      return;
+    }
+    const { latitude, longitude } = geoData.results[0];
+    const map = L.map(mapDiv).setView([latitude, longitude], 12);
+
+    // kafle OSM (cache’owane lokalnie)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap',
+      crossOrigin: true
+    }).addTo(map);
+
+    // marker dla miasta
+    L.marker([latitude, longitude]).addTo(map).bindPopup(trip.city);
+
+    // ewentualne punkty trasy
+    (trip.itinerary || []).forEach(async (point) => {
+      const place = extractPlace(point);
+      if (!place || place.toLowerCase() === trip.city.toLowerCase()) return;
+      try {
+        const g = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(place)}&count=1&language=pl&format=json`);
+        const gd = await g.json();
+        if (gd.results && gd.results.length > 0) {
+          const { latitude: lat, longitude: lon } = gd.results[0];
+          L.marker([lat, lon]).addTo(map).bindPopup(place);
+        }
+      } catch {}
+    });
+  } catch (e) {
+    console.error('Mapa error:', e);
+    mapDiv.textContent = 'Błąd mapy';
+  }
+})();
         detailCard.scrollIntoView({behavior:'smooth'})
       }catch(err){
         console.error('showDetail error', err)
