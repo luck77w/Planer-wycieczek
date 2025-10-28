@@ -88,16 +88,28 @@
 
         <label for="date">Data</label>
         <input id="date" type="date" />
-<label for="departureTime">Czas wyjazdu</label>
-<input id="departureTime" type="time" />
+<div class="row">
+  <div style="flex:1">
+    <label for="departureTime">Czas wyjazdu</label>
+    <input id="departureTime" type="time" />
+  </div>
+  <div style="flex:1">
+    <label for="departurePlatform">Peron / tor (wyjazd)</label>
+    <input id="departurePlatform" type="text" placeholder="np. peron 2, tor 4" />
+  </div>
+</div>
 
-<label for="returnTime">Czas powrotu</label>
-<input id="returnTime" type="time" />
-<label for="departurePlatform">Peron / tor (wyjazd)</label>
-<input id="departurePlatform" type="text" placeholder="np. peron 2, tor 4" />
+<div class="row">
+  <div style="flex:1">
+    <label for="returnTime">Czas powrotu</label>
+    <input id="returnTime" type="time" />
+  </div>
+  <div style="flex:1">
+    <label for="returnPlatform">Peron / tor (powrót)</label>
+    <input id="returnPlatform" type="text" placeholder="np. peron 3, tor 1" />
+  </div>
+</div>
 
-<label for="returnPlatform">Peron / tor (powrót)</label>
-<input id="returnPlatform" type="text" placeholder="np. peron 3, tor 1" />
 
         <label>Charakter</label>
         <div class="row">
@@ -599,15 +611,10 @@ trainLink.href = `https://mt.rozklad-pkp.pl/?from=Lubliniec&to=${encodeURICompon
         const editBtn = document.getElementById('editTrip')
         const deleteBtn = document.getElementById('deleteTrip')
 
-   replaceHandler(printBtn, ()=>{
+    replaceHandler(printBtn, ()=>{
   const w = window.open('', '_blank')
-  if (!w) {
-    alert('Proszę pozwolić na otwieranie wyskakujących okienek dla tej strony (pop-up).')
-    return
-  }
-
   let html = '<html><head><title>' + escapeHtml(trip.title) + '</title><meta charset="utf-8">'
-  html += '<style>body{font-family:Arial,Helvetica,sans-serif;padding:18px}h1{margin-bottom:6px}.meta{color:#555;margin:4px 0}.highlight{background:#fff7d6;border-left:6px solid #f5b400;padding:8px;margin:8px 0;font-weight:bold} img{max-width:100%;border-radius:8px}</style>'
+  html += '<style>body{font-family:Arial,Helvetica,sans-serif;padding:18px}h1{margin-bottom:6px}.meta{color:#555;margin:4px 0}.highlight{background:#fff7d6;border-left:6px solid #f5b400;padding:8px;margin:8px 0;font-weight:bold}</style>'
   html += '</head><body>'
   html += '<h1>' + escapeHtml(trip.title) + '</h1>'
   html += '<p>' + escapeHtml(trip.city) + (trip.date ? (' • ' + escapeHtml(trip.date)) : '') + '</p>'
@@ -651,71 +658,37 @@ trainLink.href = `https://mt.rozklad-pkp.pl/?from=Lubliniec&to=${encodeURICompon
   w.document.write(html)
   w.document.close()
 
-  // Po załadowaniu dokumentu w nowym oknie: pobierz prognozę i statyczną mapę.
   w.onload = async () => {
-    // 1) Pogoda
+    // pogoda
     if (trip.city && trip.date) {
-      try {
-        const weather = await fetchWeather(trip.city, trip.date)
-        const box = w.document.getElementById('weatherBox')
-        if (weather && box) {
-          const icons = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',61:'🌧️',71:'❄️',95:'⛈️'}
-          const icon = icons[weather.code] || '🌡️'
-          box.textContent = `${icon} ${weather.min}–${weather.max}°C, opady ${weather.rain} mm`
-        } else if (box) {
-          box.textContent = 'Brak prognozy'
-        }
-      } catch (e) {
-        const box = w.document.getElementById('weatherBox')
-        if (box) box.textContent = 'Błąd pobierania pogody'
+      const weather = await fetchWeather(trip.city, trip.date)
+      const box = w.document.getElementById('weatherBox')
+      if (weather && box) {
+        const icons = {0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',51:'🌦️',61:'🌧️',71:'❄️',95:'⛈️'}
+        const icon = icons[weather.code] || '🌡️'
+        box.textContent = `${icon} ${weather.min}–${weather.max}°C, opady ${weather.rain} mm`
+      } else if (box) {
+        box.textContent = 'Brak prognozy'
       }
     }
 
-    // 2) Statyczna mapa — użyjemy bezpośrednio gotowego URL i poczekamy na load obrazu
+    // statyczna mapa (OpenStreetMap Static Map)
     const mapBox = w.document.getElementById('mapBox')
     try {
       const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(trip.city)}&count=1&language=pl&format=json`)
       const geoData = await geo.json()
       if (!geoData.results || geoData.results.length === 0) {
-        mapBox.textContent = 'Nie udało się pobrać współrzędnych miasta.'
-        // jeśli nie ma współrzędnych — nadal dajemy możliwość wydruku (bez mapy)
-        w.print()
+        mapBox.textContent = 'Nie udało się pobrać mapy.'
         return
       }
-
       const { latitude, longitude } = geoData.results[0]
       const staticMapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${latitude},${longitude}&zoom=12&size=600x300&markers=${latitude},${longitude},red-pushpin`
-
-      // stwórz element <img> i poczekaj aż się załaduje
-      const img = w.document.createElement('img')
-      img.alt = 'Mapa ' + escapeHtml(trip.city)
-      img.style.borderRadius = '8px'
-      img.style.maxWidth = '100%'
-
-      // handlers
-      img.onload = () => {
-        // wstaw obraz i dopiero wtedy drukuj
-        mapBox.innerHTML = ''
-        mapBox.appendChild(img)
-        try { w.focus() } catch(e){}
-        // mały timeout (100ms) da przeglądarce czas na wyrenderowanie obrazka
-        setTimeout(()=>{ try{ w.print() }catch(e){ console.error('print failed', e)} }, 100)
-      }
-      img.onerror = () => {
-        mapBox.textContent = 'Błąd przy wczytywaniu obrazu mapy.'
-        // mimo błędu — pozwalamy na druk (bez mapy)
-        setTimeout(()=>{ try{ w.print() }catch(e){ console.error('print failed', e)} }, 100)
-      }
-
-      // rozpocznij pobieranie (ustaw src ostatnie)
-      img.src = staticMapUrl
-
-    } catch (err) {
-      console.error('Static map error', err)
-      mapBox.textContent = 'Błąd podczas pobierania mapy.'
-      // nawet przy błędzie — wywołaj druk po krótkim czasie
-      setTimeout(()=>{ try{ w.print() }catch(e){ console.error('print failed', e)} }, 200)
+      mapBox.innerHTML = `<img src="${staticMapUrl}" alt="Mapa ${escapeHtml(trip.city)}" style="border-radius:8px;max-width:100%">`
+    } catch {
+      mapBox.textContent = 'Błąd podczas wczytywania mapy.'
     }
+
+    w.print()
   }
 })
 
